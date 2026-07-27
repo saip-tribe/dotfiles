@@ -20,5 +20,15 @@ for bootstrap in /workspaces/*/.claude-home/bootstrap.sh; do
     echo "dotfiles: bootstrap deferred -- quit Claude Code and run '$bootstrap --with-cli'"
 done
 
+# Materialize mise-managed global tools (gh, ...). Their registration lives in
+# ~/.config/mise, persisted by the bootstrap above; the binaries live on the
+# /mise-data volume and usually survive rebuilds -- this covers the case where
+# the volume was recreated. No-op when everything is already installed.
+if command -v mise >/dev/null 2>&1; then
+  mise install || echo "dotfiles: mise install failed -- run 'mise install' by hand"
+else
+  echo "dotfiles: mise not on PATH yet -- global tools materialize on the next 'mise install'"
+fi
+
 # Add further personal setup below (shell config, aliases, git settings...).
 # Anything referencing a specific repo should be guarded like the loop above.
