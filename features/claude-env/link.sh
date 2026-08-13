@@ -18,10 +18,13 @@ set -euo pipefail
 HOST_HOME=/Users/saip-tribe
 CLAUDE="$HOST_HOME/.claude"
 CONFIG="$HOST_HOME/Github/claude-config-sai"
-# Must match the volume target in devcontainer-feature.json. Hardcoded in both places rather than
-# derived from $HOME, because variable substitution inside a Feature's own mounts is not part of
-# the documented spec.
-CLI_DIR=/home/vscode/.local/share/claude
+# Must match the volume target in devcontainer-feature.json. Deliberately OUTSIDE $HOME: Docker
+# creates a volume's missing parent directories as root, so mounting this at
+# ~/.local/share/claude made ~/.local and ~/.local/share root-owned before any hook ran. That is
+# not a local problem -- mise keeps its state in ~/.local/state, so it could no longer write its
+# trusted-configs file, every mise command failed, and the project's whole setup script died on
+# its first step. Mounting at the filesystem root keeps that blast radius to this one directory.
+CLI_DIR=/claude-cli
 
 FORCE=0
 for arg in "$@"; do
@@ -32,6 +35,27 @@ for arg in "$@"; do
 done
 
 say() { printf '  %s\n' "$*"; }
+
+# Docker creates a volume's mount point, and any missing parents, owned by root. Take ownership of
+# anything we need to write that we do not already own. Runs before every mkdir below, because the
+# failure it prevents is not obvious: a root-owned ~/.local breaks mise, which breaks the project
+# setup script, which leaves no tools on PATH at all.
+#
+# ~/.local and ~/.local/share are repaired too, not because this Feature still mounts there, but
+# because version 1.0.2 did -- a container created by that version needs the damage undone.
+take_ownership() {
+  local d owner="$(id -u):$(id -g)"
+  for d in "$@"; do
+    [[ -d "$d" ]] || continue
+    [[ -w "$d" ]] && continue
+    if sudo -n true 2>/dev/null; then
+      sudo chown "$owner" "$d" && say "took ownership of $d"
+    else
+      echo "WARNING: $d is not writable and passwordless sudo is unavailable." >&2
+      echo "WARNING: run: sudo chown $owner $d" >&2
+    fi
+  done
+}
 
 # Never fail container creation over a missing mount: that is a misconfigured host, not a broken
 # build. Warn loudly instead -- without this the symptom is Claude quietly reporting no skills and
@@ -80,6 +104,8 @@ link() {
 
 echo "claude-env: linking \$HOME to the mounted host trees"
 
+take_ownership "$CLI_DIR" "$HOME/.local" "$HOME/.local/share"
+
 link "$HOME/.claude"          "$CLAUDE"                  ".claude"
 # Kept inside the mounted directory on purpose: bind-mounting a single file breaks the moment
 # something rewrites it whole, which a directory mount survives.
@@ -111,17 +137,22 @@ mkdir -p "$CLAUDE/shell"
 # it is authored config: install.sh seeds it from mise-global.toml. The binaries live on a volume.
 
 # The standalone CLI lives on a named volume -- platform-specific binaries must not be shared with
-# the host -- so only the PATH shim needs recreating after a rebuild.
-if [[ "$HOME" != "/home/vscode" ]]; then
-  say "note: \$HOME is $HOME, but the CLI volume is mounted at $CLI_DIR"
-fi
-latest="$(ls -1 "$CLI_DIR/versions" 2>/dev/null | sort -V | tail -1 || true)"
-if [[ -n "$latest" ]]; then
-  mkdir -p "$HOME/.local/bin"
-  ln -sfn "$CLI_DIR/versions/$latest" "$HOME/.local/bin/claude"
-  say "CLI shim: ~/.local/bin/claude -> $latest"
+# the host -- mounted outside $HOME and linked in, so a fresh volume's root-owned mount point
+# cannot affect anything else under $HOME.
+if [[ -d "$CLI_DIR" ]]; then
+  mkdir -p "$HOME/.local/share"
+  link "$HOME/.local/share/claude" "$CLI_DIR" "CLI install"
+
+  latest="$(ls -1 "$CLI_DIR/versions" 2>/dev/null | sort -V | tail -1 || true)"
+  if [[ -n "$latest" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sfn "$CLI_DIR/versions/$latest" "$HOME/.local/bin/claude"
+    say "CLI shim: ~/.local/bin/claude -> $latest"
+  else
+    say "CLI: not installed on the volume yet (install once; it then survives rebuilds)"
+  fi
 else
-  say "CLI: not on the volume yet (install once; it then survives rebuilds)"
+  say "CLI: volume not mounted at $CLI_DIR, skipping"
 fi
 
 echo "Done."
