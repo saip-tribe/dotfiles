@@ -1,0 +1,34 @@
+{
+  "name": "Claude environment",
+  "id": "claude-env",
+  "version": "1.0.2",
+  "description": "Mounts the host's Claude configuration and runtime state into the container and links them into $HOME, so sessions, skills and settings survive rebuilds. Every bind targets its identical host path, which is what allows the relative symlinks inside the store to resolve on both sides.",
+  "mounts": [
+    {
+      "type": "bind",
+      "source": "/Users/saip-tribe/.claude",
+      "target": "/Users/saip-tribe/.claude"
+    },
+    {
+      "type": "bind",
+      "source": "/Users/saip-tribe/Github/claude-config-sai",
+      "target": "/Users/saip-tribe/Github/claude-config-sai"
+    },
+    {
+      "type": "bind",
+      "source": "/Users/saip-tribe/.agents",
+      "target": "/Users/saip-tribe/.agents"
+    },
+    {
+      "type": "bind",
+      "source": "/Users/saip-tribe/.config/graphite",
+      "target": "/Users/saip-tribe/.config/graphite"
+    },
+    {
+      "type": "volume",
+      "source": "claude-cli-linux",
+      "target": "/home/vscode/.local/share/claude"
+    }
+  ],
+  "postCreateCommand": "/usr/local/share/claude-env/link.sh"
+}

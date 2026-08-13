@@ -1,0 +1,70 @@
+# Persist shell history in the mounted store rather than the container overlay, so it survives a
+# rebuild. Set here rather than symlinked: zsh trims the file by writing a temp file and renaming
+# it over the target, which would replace a symlink with a regular file and silently stop
+# persisting.
+if [[ -d /Users/saip-tribe/.claude ]]; then
+  HISTFILE=/Users/saip-tribe/.claude/shell/zsh_history_container
+fi
+
+# Create a git worktree that survives a dev container rebuild.
+#
+# Worktrees go under .worktrees/ inside the repository, which sits on the workspace bind mount, so
+# they persist on the host. A worktree created as a sibling of the repository lands on the
+# container's overlay filesystem instead and is wiped by every rebuild.
+#
+# Usage: wt <name>        e.g. wt scratch
+wt() {
+  emulate -L zsh
+  local name=${1:-}
+  if [[ -z $name || ! $name =~ ^[A-Za-z0-9_-]+$ ]]; then
+    print -u2 "usage: wt <name>   (letters, digits, '_' and '-' only)"
+    return 1
+  fi
+
+  # Resolve the main checkout, so this works when run from inside a worktree too.
+  local main
+  main=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10); exit}')
+  [[ -n $main ]] || { print -u2 "wt: not inside a git repository"; return 1 }
+
+  local dir="$main/.worktrees/$name"
+  [[ -e $dir ]] && { print -u2 "wt: $dir already exists"; return 1 }
+
+  git -C "$main" fetch origin main || return 1
+  git -C "$main" worktree add -b "$name" "$dir" origin/main || return 1
+
+  # Use the project's own worktree bootstrap when it has one. Invoked directly rather than through
+  # a task runner: a fresh worktree's tool config is typically untrusted until that script's first
+  # step trusts it.
+  if [[ -x $dir/scripts/worktrees/bootstrap.sh ]]; then
+    ( cd "$dir" && ./scripts/worktrees/bootstrap.sh )
+  else
+    print "wt: created $dir — this project has no bootstrap script, so install its dependencies yourself"
+  fi
+}
+
+# List worktrees with the slug each one's dev stack derives from its directory name. Two worktrees
+# whose names slug alike silently share one stack, and therefore one set of containers and volumes.
+wtls() {
+  emulate -L zsh
+  # Deliberately not named `path`: that is tied to $PATH in zsh, so assigning to it here would
+  # destroy the calling shell's PATH.
+  local wt_path slug line
+  local -a lines
+  lines=("${(@f)$(git worktree list 2>/dev/null)}")
+  [[ -n ${lines[1]:-} ]] || { print -u2 "wtls: not inside a git repository"; return 1 }
+
+  for line in $lines; do
+    wt_path=${line%% *}
+    # Match the derivation the dev stack uses: lowercase, each run of other characters collapsed
+    # to a single hyphen, truncated to 48 characters, hyphens trimmed from both ends.
+    # Reimplementing this in zsh parameter expansion drifted from the real thing, which made the
+    # listing actively misleading.
+    slug=$(print -r -- "${wt_path:t}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9\n' '-' \
+             | cut -c1-48 | sed 's/^-*//;s/-*$//')
+    if [[ -f $wt_path/.git ]]; then
+      printf '%-60s %s\n' "$wt_path" "$slug"
+    else
+      printf '%-60s %s\n' "$wt_path" "(main checkout — uses the project's own name)"
+    fi
+  done
+}

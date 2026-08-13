@@ -1,0 +1,38 @@
+name: Release dev container features
+
+# Publishes each features/<id> to ghcr.io/<owner>/<repo>/<id>, which is what the editor's
+# dev.containers.defaultFeatures setting resolves. Bump the "version" in a feature's
+# devcontainer-feature.json when you change it -- the tag is taken from that field, and re-pushing
+# an unchanged version is a no-op.
+#
+# Registry visibility is a separate, one-time setting on the published package, independent of this
+# workflow and of the repository's own visibility. The editor pulls the Feature anonymously at
+# container-build time, so the package has to be publicly readable; check that under the package's
+# own settings after the first publish.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'features/**'
+      - '.github/workflows/release-features.yml'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish features
+        uses: devcontainers/action@v1
+        with:
+          publish-features: 'true'
+          base-path-to-features: './features'
+          # Suppresses the git tag this action would otherwise create per release. Nothing to do
+          # with registry visibility.
+          disable-repo-tagging: 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

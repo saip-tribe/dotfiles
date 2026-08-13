@@ -1,0 +1,14 @@
+# User-global mise tools, seeded into ~/.config/mise/config.toml by install.sh.
+#
+# Named mise-global.toml, NOT mise/config.toml: the latter is a path mise auto-loads as a
+# project config, so every mise command run inside this repo would try to load it and fail
+# with an untrusted-config error.
+#
+# Declarative and tiny, which is why it is versioned here rather than kept in a persisted
+# bind mount like the rest of the container's state. The tool *binaries* live on the
+# /mise-data volume and survive rebuilds on their own; this file is only the registration,
+# so a recreated volume just needs `mise install`.
+#
+# Project-level tools belong in that project's .mise.toml, not here.
+[tools]
+gh = "latest"
