@@ -144,12 +144,33 @@ if [[ -d "$CLI_DIR" ]]; then
   link "$HOME/.local/share/claude" "$CLI_DIR" "CLI install"
 
   latest="$(ls -1 "$CLI_DIR/versions" 2>/dev/null | sort -V | tail -1 || true)"
+
+  # Nothing on the volume means it is genuinely new -- a new machine, or the volume was removed.
+  # Bootstrap from the binary the editor extension already ships: it is the same first-party
+  # build, so this pulls in no third-party installer, and `claude install` writes into
+  # ~/.local/share/claude, which is linked to the volume above.
+  #
+  # Best-effort on purpose. The extension may not be unpacked yet when this runs at container
+  # create, and that is not worth failing a build over -- the volume survives rebuilds, so this
+  # only ever has to succeed once.
+  if [[ -z "$latest" ]]; then
+    boot="$(ls -1d "$HOME"/.cursor-server/extensions/anthropic.claude-code-*/resources/native-binary/claude \
+                   "$HOME"/.vscode-server/extensions/anthropic.claude-code-*/resources/native-binary/claude \
+             2>/dev/null | sort -V | tail -1 || true)"
+    if [[ -n "$boot" && -x "$boot" ]]; then
+      say "CLI: volume is empty, installing from the bundled extension binary"
+      "$boot" install stable >/dev/null 2>&1 \
+        && latest="$(ls -1 "$CLI_DIR/versions" 2>/dev/null | sort -V | tail -1 || true)" \
+        || say "CLI: install failed -- run 'claude install stable' once by hand"
+    else
+      say "CLI: volume empty and no bundled binary yet -- run 'claude install stable' once"
+    fi
+  fi
+
   if [[ -n "$latest" ]]; then
     mkdir -p "$HOME/.local/bin"
     ln -sfn "$CLI_DIR/versions/$latest" "$HOME/.local/bin/claude"
     say "CLI shim: ~/.local/bin/claude -> $latest"
-  else
-    say "CLI: not installed on the volume yet (install once; it then survives rebuilds)"
   fi
 else
   say "CLI: volume not mounted at $CLI_DIR, skipping"

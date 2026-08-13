@@ -1,7 +1,7 @@
 {
   "name": "Claude environment",
   "id": "claude-env",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Mounts the host's Claude configuration and runtime state into the container and links them into $HOME, so sessions, skills and settings survive rebuilds. Every bind targets its identical host path, which is what allows the relative symlinks inside the store to resolve on both sides. The CLI volume is mounted outside $HOME, because Docker creates a volume's missing parents as root and a root-owned ~/.local breaks tooling that keeps state there.",
   "mounts": [
     {
